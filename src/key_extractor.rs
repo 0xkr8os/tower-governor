@@ -165,7 +165,7 @@ fn maybe_forwarded(headers: &HeaderMap) -> Option<IpAddr> {
 fn maybe_connect_info<T>(req: &Request<T>) -> Option<IpAddr> {
     println!("maybe_connect_info");
     req.extensions()
-        .get::<axum::extract::ConnectInfo<SocketAddr>>()
+        .get::<SocketAddr>()
         .map(|addr| addr.ip())
 }
 
