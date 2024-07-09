@@ -187,7 +187,7 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.project().inner.project() {
-            KindProj::Passthrough { future } => future.poll(cx),
+            KindProj::Passthrough { future } => {println!("passthrough");future.poll(cx)},
             KindProj::RateLimitHeader {
                 future,
                 burst_size,
