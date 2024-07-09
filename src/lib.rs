@@ -77,6 +77,7 @@ where
     }
 
     fn call(&mut self, req: Request<Incoming>) -> Self::Future {
+        println!("call");
         if let Some(configured_methods) = &self.methods {
             if !configured_methods.contains(req.method()) {
                 // The request method is not configured, we're ignoring this one.
