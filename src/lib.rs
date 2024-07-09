@@ -102,6 +102,7 @@ where
                 }
 
                 Err(negative) => {
+                    println!("rate limit exceeded");
                     let wait_time = negative
                         .wait_time_from(DefaultClock::default().now())
                         .as_secs();
@@ -138,6 +139,7 @@ where
             },
 
             Err(e) => {
+                println!("error");
                 let error_response = self.error_handler()(e);
                 ResponseFuture {
                     inner: Kind::Error {
