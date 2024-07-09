@@ -164,6 +164,7 @@ fn maybe_forwarded(headers: &HeaderMap) -> Option<IpAddr> {
 /// Looks in `ConnectInfo` extension
 fn maybe_connect_info<T>(req: &Request<T>) -> Option<IpAddr> {
     println!("maybe_connect_info");
+    println!("{:?}", req.extensions());
     req.extensions()
         .get::<SocketAddr>()
         .map(|addr| addr.ip())
