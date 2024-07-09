@@ -140,7 +140,7 @@ where
             },
 
             Err(e) => {
-                println!("error");
+                println!("error {}", e);
                 let error_response = self.error_handler()(e);
                 ResponseFuture {
                     inner: Kind::Error {
