@@ -65,7 +65,7 @@ impl<K: KeyExtractor, M: RateLimitingMiddleware<QuantaInstant>> Clone for Govern
 impl<K, S> Service<Request<Incoming>> for Governor<K, NoOpMiddleware, S>
 where
     K: KeyExtractor,
-    S: Service<Request<Incoming>, Response = HttpBody>,
+    S: Service<Request<Incoming>, Response = Response<HttpBody>>,
     S::Error: Into<BoxError>,
 {
     type Response = S::Response;
@@ -180,10 +180,10 @@ pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 impl<F, Error> Future for ResponseFuture<F>
 where
-    F: Future<Output = Result<HttpBody, Error>>,
+    F: Future<Output = Result<Response<HttpBody>, Error>>,
     Error: Into<BoxError>
 {
-    type Output = Result<HttpBody, Error>;
+    type Output = Result<Response<HttpBody>, Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.project().inner.project() {
@@ -220,7 +220,11 @@ where
 
                 Poll::Ready(Ok(response))
             }
-            KindProj::Error { error_response } => Poll::Ready(Ok(HttpBody::empty())),
+            KindProj::Error { error_response } => {
+              let response = error_response;
+              let body = HttpBody::empty();
+              Poll::Ready(Ok(Response::new(body)))
+            },
         }
     }
 }
