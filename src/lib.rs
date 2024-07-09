@@ -73,12 +73,10 @@ where
     type Future = ResponseFuture<S::Future>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-      print!("poll_ready");
         self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, req: Request<Incoming>) -> Self::Future {
-        println!("call");
         if let Some(configured_methods) = &self.methods {
             println!("configured_methods");
             if !configured_methods.contains(req.method()) {
@@ -95,7 +93,6 @@ where
             // Extraction worked, let's check if rate limiting is needed.
             Ok(key) => match self.limiter.check_key(&key) {
                 Ok(_) => {
-                    println!("rate limit ok");
                     let future = self.inner.call(req);
                     ResponseFuture {
                         inner: Kind::Passthrough { future },
@@ -103,7 +100,6 @@ where
                 }
 
                 Err(negative) => {
-                    println!("rate limit exceeded");
                     let wait_time = negative
                         .wait_time_from(DefaultClock::default().now())
                         .as_secs();
@@ -121,19 +117,17 @@ where
                             &wait_time
                         );
                     }
-                    let mut headers = HeaderMap::new();
-                    headers.insert("x-ratelimit-after", wait_time.into());
-
-                    let error_response = self.error_handler()(GovernorError::TooManyRequests {
-                        wait_time,
-                        headers: Some(headers),
-                    });
                     
-                    //let (parts, body) = error_response.into_parts();
+                    let body = HttpBody::from("Too many requests".to_string());
+                    let response = Response::builder()
+                      .status(429)      
+                      .header("x-ratelimit-after", wait_time.to_string())        
+                      .body(body)
+                      .unwrap();
 
                     ResponseFuture {
                         inner: Kind::Error {
-                            error_response: Some(error_response),
+                            error_response: Some(response),
                         },
                     }
                 }
@@ -141,10 +135,18 @@ where
 
             Err(e) => {
                 println!("governor error {:?}", e);
-                let error_response = self.error_handler()(e);
+                // let error_response = self.error_handler()(e);
+               
+                let body = HttpBody::from(e.to_string());
+                let response = Response::builder()
+                  .status(500)              
+                  .body(body)
+                  .unwrap();
+                
+              
                 ResponseFuture {
                     inner: Kind::Error {
-                        error_response: Some(error_response),
+                        error_response: Some(response),
                     },
                 }
             }
@@ -180,7 +182,7 @@ enum Kind<F> {
         future: F,
     },
     Error {
-        error_response: Option<Response<Body>>,
+        error_response: Option<Response<HttpBody>>
     },
 }
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -211,26 +213,31 @@ where
                     HeaderName::from_static("x-ratelimit-remaining"),
                     HeaderValue::from(*remaining_burst_capacity),
                 );
-                // response.headers_mut().extend(headers.drain());
-                // response.
+                response.headers_mut().extend(headers.drain());
+   
 
                 Poll::Ready(Ok(response))
             }
             KindProj::WhitelistedHeader { future } => {
                 let mut response = ready!(future.poll(cx))?;
 
-                // let headers = response.headers_mut();
-                // headers.insert(
-                //     HeaderName::from_static("x-ratelimit-whitelisted"),
-                //     HeaderValue::from_static("true"),
-                // );
+                let headers = response.headers_mut();
+                headers.insert(
+                    HeaderName::from_static("x-ratelimit-whitelisted"),
+                    HeaderValue::from_static("true"),
+                );
 
                 Poll::Ready(Ok(response))
             }
             KindProj::Error { error_response } => {
-              let response = error_response;
-              let body = HttpBody::empty();
-              Poll::Ready(Ok(Response::new(body)))
+              let error = error_response.as_ref().unwrap();
+              let body = HttpBody::from("Too many requests".to_string());
+              let response = Response::builder()
+                .status(error.status())              
+                .body(body)
+                .unwrap();
+              
+              Poll::Ready(Ok(response))
             },
         }
     }

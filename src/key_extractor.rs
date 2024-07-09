@@ -73,7 +73,6 @@ impl KeyExtractor for PeerIpKeyExtractor {
 
     //type Key: Clone + Hash + Eq;
     fn extract<T>(&self, req: &Request<T>) -> Result<Self::Key, GovernorError> {
-        println!("PeerIpKeyExtractor::extract");
         maybe_connect_info(req).ok_or(GovernorError::UnableToExtractKey)
     }
 
@@ -160,18 +159,9 @@ fn maybe_forwarded(headers: &HeaderMap) -> Option<IpAddr> {
     })
 }
 
-#[cfg(feature = "axum")]
 /// Looks in `ConnectInfo` extension
 fn maybe_connect_info<T>(req: &Request<T>) -> Option<IpAddr> {
-    println!("maybe_connect_info");
-    println!("{:?}", req.extensions());
     req.extensions()
         .get::<SocketAddr>()
         .map(|addr| addr.ip())
-}
-
-#[cfg(not(feature = "axum"))]
-/// Looks in `ConnectInfo` extension
-fn maybe_connect_info<T>(req: &Request<T>) -> Option<IpAddr> {
-    req.extensions().get::<SocketAddr>().map(|addr| addr.ip())
 }
