@@ -92,6 +92,7 @@ where
             // Extraction worked, let's check if rate limiting is needed.
             Ok(key) => match self.limiter.check_key(&key) {
                 Ok(_) => {
+                    println!("rate limit ok");
                     let future = self.inner.call(req);
                     ResponseFuture {
                         inner: Kind::Passthrough { future },
