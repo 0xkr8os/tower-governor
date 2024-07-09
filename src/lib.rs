@@ -16,12 +16,14 @@ pub use errors::GovernorError;
 //use http::response::Response;
 
 use http::header::{HeaderName, HeaderValue};
-use http::request::Request;
+//use http::request::Request;
 
+use http::HeaderMap;
 // //#[cfg(not(feature = "axum"))]
 // use hyper::Response;
+use hyper::Request;
+use hyper::Response;
 
-use http::{HeaderMap, Response};
 use key_extractor::KeyExtractor;
 use pin_project::pin_project;
 use std::sync::Arc;
@@ -202,7 +204,7 @@ where
                     HeaderName::from_static("x-ratelimit-remaining"),
                     HeaderValue::from(*remaining_burst_capacity),
                 );
-                //response.headers_mut().extend(headers.drain());
+                response.headers_mut().extend(headers.drain());
                 
 
                 Poll::Ready(Ok(response))
@@ -210,11 +212,11 @@ where
             KindProj::WhitelistedHeader { future } => {
                 let mut response = ready!(future.poll(cx))?;
 
-                // let headers = response.headers_mut();
-                // headers.insert(
-                //     HeaderName::from_static("x-ratelimit-whitelisted"),
-                //     HeaderValue::from_static("true"),
-                // );
+                let headers = response.headers_mut();
+                headers.insert(
+                    HeaderName::from_static("x-ratelimit-whitelisted"),
+                    HeaderValue::from_static("true"),
+                );
 
                 Poll::Ready(Ok(response))
             }
