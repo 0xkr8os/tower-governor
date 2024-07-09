@@ -19,6 +19,7 @@ use http::header::{HeaderName, HeaderValue};
 //use http::request::Request;
 
 use http::HeaderMap;
+use hyper::body::Incoming;
 // //#[cfg(not(feature = "axum"))]
 // use hyper::Response;
 use hyper::Request;
@@ -61,10 +62,10 @@ impl<K: KeyExtractor, M: RateLimitingMiddleware<QuantaInstant>> Clone for Govern
     }
 }
 // Implement tower::Service for Governor
-impl<K, S, ReqBody> Service<Request<ReqBody>> for Governor<K, NoOpMiddleware, S>
+impl<K, S> Service<Request<Incoming>> for Governor<K, NoOpMiddleware, S>
 where
     K: KeyExtractor,
-    S: Service<Request<ReqBody>, Response = HttpBody>,
+    S: Service<Request<Incoming>, Response = HttpBody>,
     S::Error: Into<BoxError>,
 {
     type Response = S::Response;
@@ -75,7 +76,7 @@ where
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
+    fn call(&mut self, req: Request<Incoming>) -> Self::Future {
         if let Some(configured_methods) = &self.methods {
             if !configured_methods.contains(req.method()) {
                 // The request method is not configured, we're ignoring this one.
