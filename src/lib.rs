@@ -23,14 +23,13 @@ use http::HeaderMap;
 // use hyper::Response;
 use hyper::Request;
 use hyper::Response;
-
 use key_extractor::KeyExtractor;
 use pin_project::pin_project;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::{future::Future, pin::Pin, task::ready};
 use tower::{Layer, Service};
-
+use jsonrpsee::http_client::HttpBody;
 
 /// The Layer type that implements tower::Layer and is passed into `.layer()`
 pub struct GovernorLayer<K, M>
@@ -65,7 +64,7 @@ impl<K: KeyExtractor, M: RateLimitingMiddleware<QuantaInstant>> Clone for Govern
 impl<K, S, ReqBody> Service<Request<ReqBody>> for Governor<K, NoOpMiddleware, S>
 where
     K: KeyExtractor,
-    S: Service<Request<ReqBody>, Response = Response<Body>>,
+    S: Service<Request<ReqBody>, Response = HttpBody>,
     S::Error: Into<BoxError>,
 {
     type Response = S::Response;
@@ -180,10 +179,10 @@ pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 impl<F, Error> Future for ResponseFuture<F>
 where
-    F: Future<Output = Result<Response<Body>, Error>>,
+    F: Future<Output = Result<HttpBody, Error>>,
     Error: Into<BoxError>
 {
-    type Output = Result<Response<Body>, Error>;
+    type Output = Result<HttpBody, Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.project().inner.project() {
@@ -204,25 +203,23 @@ where
                     HeaderName::from_static("x-ratelimit-remaining"),
                     HeaderValue::from(*remaining_burst_capacity),
                 );
-                response.headers_mut().extend(headers.drain());
-                
+                // response.headers_mut().extend(headers.drain());
+                // response.
 
                 Poll::Ready(Ok(response))
             }
             KindProj::WhitelistedHeader { future } => {
                 let mut response = ready!(future.poll(cx))?;
 
-                let headers = response.headers_mut();
-                headers.insert(
-                    HeaderName::from_static("x-ratelimit-whitelisted"),
-                    HeaderValue::from_static("true"),
-                );
+                // let headers = response.headers_mut();
+                // headers.insert(
+                //     HeaderName::from_static("x-ratelimit-whitelisted"),
+                //     HeaderValue::from_static("true"),
+                // );
 
                 Poll::Ready(Ok(response))
             }
-            KindProj::Error { error_response } => Poll::Ready(Ok(error_response.take().expect("
-                <Governor as Service<Request<_>>>::call must produce Response<String> when GovernorError occurs.
-            "))),
+            KindProj::Error { error_response } => Poll::Ready(Ok(HttpBody::empty())),
         }
     }
 }
