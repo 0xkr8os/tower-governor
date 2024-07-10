@@ -78,10 +78,8 @@ where
 
     fn call(&mut self, req: Request<Incoming>) -> Self::Future {
         if let Some(configured_methods) = &self.methods {
-            println!("configured_methods");
             if !configured_methods.contains(req.method()) {
                 // The request method is not configured, we're ignoring this one.
-                println!("method not configured");
                 let future = self.inner.call(req);
                 return ResponseFuture {
                     inner: Kind::Passthrough { future },
