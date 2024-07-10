@@ -10,18 +10,10 @@ use crate::governor::{Governor, GovernorConfig};
 use ::governor::clock::{Clock, DefaultClock, QuantaInstant};
 use ::governor::middleware::{NoOpMiddleware, RateLimitingMiddleware, StateInformationMiddleware};
 
-#[cfg(feature = "axum")]
-use axum::body::Body;
 pub use errors::GovernorError;
-//use http::response::Response;
-
 use http::header::{HeaderName, HeaderValue};
-//use http::request::Request;
-
 use http::HeaderMap;
 use hyper::body::Incoming;
-// //#[cfg(not(feature = "axum"))]
-// use hyper::Response;
 use hyper::Request;
 use hyper::Response;
 use key_extractor::KeyExtractor;
@@ -132,9 +124,6 @@ where
             },
 
             Err(e) => {
-                println!("governor error {:?}", e);
-                // let error_response = self.error_handler()(e);
-               
                 let body = HttpBody::from(e.to_string());
                 let response = Response::builder()
                   .status(500)              
@@ -241,98 +230,99 @@ where
     }
 }
 
-// // Implementation of Service for Governor using the StateInformationMiddleware.
-// impl<K, S, ReqBody> Service<Request<ReqBody>> for Governor<K, StateInformationMiddleware, S>
-// where
-//     K: KeyExtractor,
-//     S: Service<Request<ReqBody>, Response = Response<Body>>,
-//     // Body type of response must impl From<String> trait to convert potential error
-//     // produced by governor to re
-// {
-//     type Response = S::Response;
-//     type Error = S::Error;
-//     type Future = ResponseFuture<S::Future>;
+// Implementation of Service for Governor using the StateInformationMiddleware.
+impl<K, S> Service<Request<Incoming>> for Governor<K, StateInformationMiddleware, S>
+where
+    K: KeyExtractor,
+    S: Service<Request<Incoming>, Response = Response<HttpBody>>,
+    S::Error: Into<BoxError>,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = ResponseFuture<S::Future>;
 
-//     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-//         // Our middleware doesn't care about backpressure so its ready as long
-//         // as the inner service is ready.
-//         self.inner.poll_ready(cx)
-//     }
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        // Our middleware doesn't care about backpressure so its ready as long
+        // as the inner service is ready.
+        self.inner.poll_ready(cx)
+    }
 
-//     fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
-//         if let Some(configured_methods) = &self.methods {
-//             if !configured_methods.contains(req.method()) {
-//                 // The request method is not configured, we're ignoring this one.
-//                 let fut = self.inner.call(req);
-//                 return ResponseFuture {
-//                     inner: Kind::WhitelistedHeader { future: fut },
-//                 };
-//             }
-//         }
-//         // Use the provided key extractor to extract the rate limiting key from the request.
-//         match self.key_extractor.extract(&req) {
-//             // Extraction worked, let's check if rate limiting is needed.
-//             Ok(key) => match self.limiter.check_key(&key) {
-//                 Ok(snapshot) => {
-//                     let fut = self.inner.call(req);
-//                     ResponseFuture {
-//                         inner: Kind::RateLimitHeader {
-//                             future: fut,
-//                             burst_size: snapshot.quota().burst_size().get(),
-//                             remaining_burst_capacity: snapshot.remaining_burst_capacity(),
-//                         },
-//                     }
-//                 }
+    fn call(&mut self, req: Request<Incoming>) -> Self::Future {
+        if let Some(configured_methods) = &self.methods {
+            if !configured_methods.contains(req.method()) {
+                // The request method is not configured, we're ignoring this one.
+                let fut = self.inner.call(req);
+                return ResponseFuture {
+                    inner: Kind::WhitelistedHeader { future: fut },
+                };
+            }
+        }
+        // Use the provided key extractor to extract the rate limiting key from the request.
+        match self.key_extractor.extract(&req) {
+            // Extraction worked, let's check if rate limiting is needed.
+            Ok(key) => match self.limiter.check_key(&key) {
+                Ok(snapshot) => {
+                    let fut = self.inner.call(req);
+                    ResponseFuture {
+                        inner: Kind::RateLimitHeader {
+                            future: fut,
+                            burst_size: snapshot.quota().burst_size().get(),
+                            remaining_burst_capacity: snapshot.remaining_burst_capacity(),
+                        },
+                    }
+                }
 
-//                 Err(negative) => {
-//                     let wait_time = negative
-//                         .wait_time_from(DefaultClock::default().now())
-//                         .as_secs();
+                Err(negative) => {
+                    let wait_time = negative
+                        .wait_time_from(DefaultClock::default().now())
+                        .as_secs();
 
-//                     #[cfg(feature = "tracing")]
-//                     {
-//                         let key_name = match self.key_extractor.key_name(&key) {
-//                             Some(n) => format!(" [{}]", &n),
-//                             None => "".to_owned(),
-//                         };
-//                         tracing::info!(
-//                             "Rate limit exceeded for {}{}, quota reset in {}s",
-//                             self.key_extractor.name(),
-//                             key_name,
-//                             &wait_time
-//                         );
-//                     }
+                    #[cfg(feature = "tracing")]
+                    {
+                        let key_name = match self.key_extractor.key_name(&key) {
+                            Some(n) => format!(" [{}]", &n),
+                            None => "".to_owned(),
+                        };
+                        tracing::info!(
+                            "Rate limit exceeded for {}{}, quota reset in {}s",
+                            self.key_extractor.name(),
+                            key_name,
+                            &wait_time
+                        );
+                    }
 
-//                     let mut headers = HeaderMap::new();
-//                     headers.insert("x-ratelimit-after", wait_time.into());
-//                     headers.insert(
-//                         "x-ratelimit-limit",
-//                         negative.quota().burst_size().get().into(),
-//                     );
-//                     headers.insert("x-ratelimit-remaining", 0.into());
 
-//                     let error_response = self.error_handler()(GovernorError::TooManyRequests {
-//                         wait_time,
-//                         headers: Some(headers),
-//                     });
+                    let body = HttpBody::from("Too many requests".to_string());
+                    let response = Response::builder()
+                      .status(429)      
+                      .header("x-ratelimit-after", wait_time.to_string())
+                      .header("x-ratelimit-limit", negative.quota().burst_size().get().to_string())
+                      .header("x-ratelimit-remaining", "0")
+                      .body(body)
+                      .unwrap();
 
-//                     ResponseFuture {
-//                         inner: Kind::Error {
-//                             error_response: Some(error_response),
-//                         },
-//                     }
-//                 }
-//             },
+                    ResponseFuture {
+                        inner: Kind::Error {
+                            error_response: Some(response),
+                        },
+                    }
+                }
+            },
 
-//             // Extraction failed, stop right now.
-//             Err(e) => {
-//                 let error_response = self.error_handler()(e);
-//                 ResponseFuture {
-//                     inner: Kind::Error {
-//                         error_response: Some(error_response),
-//                     },
-//                 }
-//             }
-//         }
-//     }
-// }
+            // Extraction failed, stop right now.
+            Err(e) => {
+              let body = HttpBody::from(e.to_string());
+              let response = Response::builder()
+                .status(500)              
+                .body(body)
+                .unwrap();
+              
+                ResponseFuture {
+                    inner: Kind::Error {
+                        error_response: Some(response),
+                    },
+                }
+            }
+        }
+    }
+}
